@@ -1,0 +1,90 @@
+Q-Link : https://leetcode.com/problems/house-robber/submissions/1152744861/?envType=daily-question&envId=2024-01-21
+
+
+Approach 1 : Recursion
+
+class Solution {
+public:
+
+    int helper(vector<int>&nums,int idx){
+        if(idx==0)return nums[idx];
+        if(idx<0)return 0;
+
+        int take=INT_MIN;
+        if(idx>=1)take=nums[idx]+helper(nums,idx-2);
+
+        int non_take=helper(nums,idx-1);
+
+        return max(take,non_take);
+    }
+
+    int rob(vector<int>& nums) {
+        int n=nums.size();
+    return helper(nums,n-1);
+    }
+};
+
+Approach 2 : Memoization 
+
+class Solution {
+public:
+
+    int helper(vector<int>&nums,int idx,vector<int>&dp){
+        if(idx==0)return nums[idx];
+        if(idx<0)return 0;
+        if(dp[idx]!=-1)return dp[idx];
+        int take=INT_MIN;
+        if(idx>=1)take=nums[idx]+helper(nums,idx-2,dp);
+
+        int non_take=helper(nums,idx-1,dp);
+
+        return dp[idx]=max(take,non_take);
+    }
+
+    int rob(vector<int>& nums) {
+        int n=nums.size();
+        vector<int>dp(n,-1);
+    return helper(nums,n-1,dp);
+    }
+};
+
+Approach 3: Tabulation
+
+int n=nums.size();
+        vector<int>dp(n,-1);
+        dp[0]=nums[0];
+        for(int i=1;i<n;i++){
+           int take=nums[i];
+                    if(i>=2)take+=dp[i-2];
+           int nontake=dp[i-1];
+
+           dp[i]=max(take,nontake);
+        }
+
+       return  dp[n-1];
+
+
+Approach 4 : Space Optimisation 
+
+class Solution {
+public:
+
+    int rob(vector<int>& nums) {
+        int n=nums.size();
+        vector<int>dp(n,-1);
+        
+        int prev=nums[0];
+        int prev2=0;
+        for(int i=1;i<n;i++){
+           int take=nums[i];
+                    if(i>=2)take+=prev2;
+           int nontake=prev;
+
+           int curr=max(take,nontake);
+           prev2=prev;
+           prev=curr;
+        }
+
+       return  prev;
+    }
+};
