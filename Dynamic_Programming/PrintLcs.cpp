@@ -20,10 +20,10 @@ public:
     string LCS="";
       int len=dp[n][m];
       len--;
-      for(int i=0;i<;len;i++){
+      for(int i=0;i<=len;i++){
         LCS+="$";
       }
-      int i=text1.length()-1,j=text2.length()-1;
+      int i=text1.length(),j=text2.length();
       while(i>0 &&j>0){
 
         if(text1[i-1]==text2[j-1]){
