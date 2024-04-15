@@ -1,0 +1,27 @@
+Q-Link : https://leetcode.com/problems/sum-root-to-leaf-numbers/description/?envType=daily-question&envId=2024-04-15
+
+class Solution {
+public:
+int ans;
+
+    void helper(TreeNode* node,string s){
+        if(node==NULL)return ;
+
+        s+=to_string(node->val);
+        if(!node->left && !node->right){
+            int val=stoi(s);
+            ans+=val;
+        }
+
+        helper(node->left,s);
+        helper(node->right,s);
+    }
+
+    int sumNumbers(TreeNode* root) {
+          string s;
+
+          helper(root,s);  
+
+        return ans;
+    }
+};
