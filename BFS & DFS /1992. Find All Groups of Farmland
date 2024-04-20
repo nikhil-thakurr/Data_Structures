@@ -1,0 +1,103 @@
+Q-Link : https://leetcode.com/problems/find-all-groups-of-farmland/description/?envType=daily-question&envId=2024-04-20
+
+
+Approach 1 : BFS
+
+class Solution {
+public:
+    int n;
+    int m;
+
+    vector<vector<int>>dir{{1,0},{-1,0},{0,-1},{0,1}};
+
+    void bfs(vector<vector<int>>& land,int i,int j,int& maxi,int& mini, vector<vector<int>>&ans){
+        queue<pair<int,int>>q;
+        q.push({i,j});
+
+        while(!q.empty()){
+            int r=q.front().first;
+            int c=q.front().second;
+            maxi=max(maxi,r);
+            mini=max(mini,c);
+
+            q.pop();
+
+            for(auto& x:dir){
+                    int nr=x[0]+r;
+                    int nc=x[1]+c;
+
+                    if(nr>=0 && nr<n&&  nc>=0 && nc<m && land[nr][nc]==1){
+                        q.push({nr,nc});
+                        land[nr][nc]=0;
+                    }
+            }
+        }
+    
+    }
+    vector<vector<int>> findFarmland(vector<vector<int>>& land) {
+        
+        n=land.size();
+        m=land[0].size();
+         vector<vector<int>>ans;
+        for(int i=0;i<n;i++){
+            for(int j=0;j<m;j++){
+                int maxi=-1,mini=-1;
+                if(land[i][j]==1){
+                    bfs(land,i,j,maxi,mini,ans);
+                    ans.push_back({i,j,maxi,mini});
+                }
+            }
+        }
+
+         return ans;
+    }
+};
+
+Approach 2 : DFS
+
+class Solution {
+public:
+    int n;
+    int m;
+
+    bool dfs(vector<vector<int>>& land,int i,int j,int& maxi,int& mini, vector<vector<int>>&ans,int &val1,int& val2){
+        if(i<0 || j<0 || i>=n || j>=m || land[i][j]==0){
+            return false;
+        }
+        
+        land[i][j]=0;
+        
+        maxi=max(i,maxi);
+        mini=max(j,mini);
+        val1=min(val1,i);
+        val2=min(val2,j);
+        bool l=dfs(land,i,j-1,maxi,mini,ans,val1,val2);
+        bool r=dfs(land,i,j+1,maxi,mini,ans,val1,val2);
+        bool u=dfs(land,i-1,j,maxi,mini,ans,val1,val2);
+        bool d=dfs(land,i+1,j,maxi,mini,ans,val1,val2);
+        if(!l && !r && !u && !d ){
+            ans.push_back({val1,val2,maxi,mini});
+            return true;
+        }
+
+        return true;
+    }
+
+    vector<vector<int>> findFarmland(vector<vector<int>>& land) {
+        
+        n=land.size();
+        m=land[0].size();
+         vector<vector<int>>ans;
+        for(int i=0;i<n;i++){
+            for(int j=0;j<m;j++){
+                int maxi=-1,mini=-1;
+                int val1=INT_MAX,val2=INT_MAX;
+                if(land[i][j]==1){
+                    dfs(land,i,j,maxi,mini,ans,val1,val2);
+                }
+            }
+        }
+
+         return ans;
+    }
+};
