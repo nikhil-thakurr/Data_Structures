@@ -1,0 +1,21 @@
+Q-Link : https://leetcode.com/problems/reverse-prefix-of-word/description/?envType=daily-question&envId=2024-05-01
+
+class Solution {
+public:
+    string reversePrefix(string word, char ch) {
+        string s="";
+        int i=0;
+        for(i;i<word.length();i++){
+            s+=word[i];
+            if(ch==word[i])break;
+        }
+
+        if(i==word.size())return word;
+
+        reverse(begin(s),end(s));
+        i++;
+        for(i;i<word.size();i++)s+=word[i];
+
+        return s;
+    }
+};
