@@ -1,0 +1,99 @@
+Q-Link : https://leetcode.com/problems/remove-nodes-from-linked-list/description/?envType=daily-question&envId=2024-05-06
+
+Approach 1 : Reverse
+
+/**
+ * Definition for singly-linked list.
+ * struct ListNode {
+ *     int val;
+ *     ListNode *next;
+ *     ListNode() : val(0), next(nullptr) {}
+ *     ListNode(int x) : val(x), next(nullptr) {}
+ *     ListNode(int x, ListNode *next) : val(x), next(next) {}
+ * };
+ */
+class Solution {
+public:
+
+    ListNode* ReverseLL(ListNode* node){
+        ListNode* p=node,*q=NULL,*r=NULL;
+
+        while(p){
+            r=q;
+            q=p;
+            p=p->next;
+            q->next=r;
+        }
+
+        return q;
+    }
+
+    ListNode* removeNodes(ListNode* head) {
+       ListNode* newHead= ReverseLL(head);
+
+       ListNode* p=newHead,*q=newHead->next;
+
+       while(p->next!=NULL){
+        if(p->val>q->val){
+            p->next=q->next;
+            q=q->next;
+        }
+        else{
+            p=q;
+            q=q->next;
+        }
+       }
+
+       ListNode* newHead2=ReverseLL(newHead);
+
+       return newHead2;
+    }
+};
+
+
+Approch 2 : Stack
+
+/**
+ * Definition for singly-linked list.
+ * struct ListNode {
+ *     int val;
+ *     ListNode *next;
+ *     ListNode() : val(0), next(nullptr) {}
+ *     ListNode(int x) : val(x), next(nullptr) {}
+ *     ListNode(int x, ListNode *next) : val(x), next(next) {}
+ * };
+ */
+class Solution {
+public:
+    ListNode* removeNodes(ListNode* head) {
+        stack<ListNode*>st;
+
+        ListNode* p=head;
+
+        while(p){
+            st.push(p);
+            p=p->next;
+        }
+
+        ListNode* node=st.top();
+        st.pop();
+
+        int maxi=node->val;
+
+         ListNode* result=new ListNode(node->val);
+
+        while(!st.empty()){
+            ListNode* currNode=st.top();
+            st.pop();
+
+            if(currNode->val>=maxi){
+                ListNode* newNode=new ListNode(currNode->val);
+                currNode->next=result;
+                result=currNode;
+                maxi=currNode->val;
+            }
+        }
+
+        return result;
+    }
+};
