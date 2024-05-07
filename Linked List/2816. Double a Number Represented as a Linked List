@@ -1,0 +1,101 @@
+Q-Link : https://leetcode.com/problems/double-a-number-represented-as-a-linked-list/description/?envType=daily-question&envId=2024-05-07
+
+Approach 1 : REVERSE (R to L)
+
+/**
+ * Definition for singly-linked list.
+ * struct ListNode {
+ *     int val;
+ *     ListNode *next;
+ *     ListNode() : val(0), next(nullptr) {}
+ *     ListNode(int x) : val(x), next(nullptr) {}
+ *     ListNode(int x, ListNode *next) : val(x), next(next) {}
+ * };
+ */
+class Solution {
+public:
+
+  ListNode* ReverseLL(ListNode* node){
+        ListNode* p=node,*q=NULL,*r=NULL;
+
+        while(p){
+            r=q;
+            q=p;
+            p=p->next;
+            q->next=r;
+        }
+
+        return q;
+    }
+
+    ListNode* doubleIt(ListNode* head) {
+        ListNode* newHead=ReverseLL(head);
+
+        ListNode* p=newHead;
+         ListNode* q=newHead;
+
+        int carry=0;
+
+        while(p){
+            int value=p->val*2+carry;
+            if(value>=10){
+                carry=1;
+               
+            }
+            else{
+                carry=0;
+            }
+             value=value%10;
+
+            p->val=value;
+            q=p;
+            p=p->next;
+
+        }
+
+        if(carry==1){
+            ListNode* newNode=new ListNode(1);
+            q->next=newNode;
+        }
+
+        return ReverseLL(newHead);
+ }
+};
+
+
+Approach  2 : L to R
+
+class Solution {
+public:
+    ListNode* doubleIt(ListNode* head) {
+        ListNode* p=head;
+          ListNode* q=NULL;
+
+          bool isFirst=true;
+          
+
+        while(p){
+            int value=p->val*2;
+            int carry=0;
+            if(value>=10){
+                value=value%10;
+                carry=1;
+            }
+
+             p->val=value;
+            if(q==NULL && carry && isFirst){
+                ListNode* newHead=new ListNode(1);
+                newHead->next=p;
+                head=newHead;
+                isFirst=false;
+            }
+            else if(q!=NULL && carry) q->val+=1;
+
+             q=p;
+             p=p->next;
+
+        }
+
+        return head;
+    }
+};
