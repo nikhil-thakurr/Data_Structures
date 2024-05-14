@@ -1,0 +1,54 @@
+Q-Link ; https://leetcode.com/problems/path-with-maximum-gold/?envType=daily-question&envId=2024-05-14
+
+Approach DFS :
+
+class Solution {
+public:
+int n,m;
+
+vector<vector<int>>dir {{0,-1},{1,0},{0,1},{-1,0}};
+
+    int helper(vector<vector<int>>& grid,int i,int j){
+        if(i<0 || j<0 || i>=n || j>=m)return 0;
+
+        int val =grid[i][j];
+         int sum=0;
+        grid[i][j]=0;
+
+        for(auto& x:dir){
+            int newi=x[0]+i;
+            int newj=x[1]+j;
+
+            if(newi<0 || newj<0 || newi>=n || newj>=m || grid[newi][newj]==0){
+                continue;
+            }
+            else{
+              sum =max(sum,  helper(grid,newi,newj));
+                
+            }
+        }
+
+        grid[i][j]=val;
+
+        return sum+val;
+
+    }
+
+    int getMaximumGold(vector<vector<int>>& grid) {
+        n=grid.size();
+        m=grid[0].size();
+
+        int ans=0;
+
+        for(int i=0;i<n;i++){
+            for(int j=0;j<m;j++){
+                if(grid[i][j]!=0){
+                    int sum=0;
+                   ans=max(ans, helper(grid,i,j));
+                }
+            }
+        }
+
+        return ans;
+    }
+};
