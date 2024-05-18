@@ -1,0 +1,34 @@
+Q-Link  : https://leetcode.com/problems/distribute-coins-in-binary-tree/description/?envType=daily-question&envId=2024-05-18
+
+/**
+ * Definition for a binary tree node.
+ * struct TreeNode {
+ *     int val;
+ *     TreeNode *left;
+ *     TreeNode *right;
+ *     TreeNode() : val(0), left(nullptr), right(nullptr) {}
+ *     TreeNode(int x) : val(x), left(nullptr), right(nullptr) {}
+ *     TreeNode(int x, TreeNode *left, TreeNode *right) : val(x), left(left), right(right) {}
+ * };
+ */
+class Solution {
+public:
+
+    int steps=0;
+
+    int helper(TreeNode* node){
+        if(node==NULL)return 0;
+        int l=helper(node->left);
+        int r=helper(node->right);
+
+        steps+=abs(l)+abs(r);
+
+        return l+r+node->val-1;
+    }
+
+    int distributeCoins(TreeNode* root) {
+       int ans= helper(root);
+
+        return steps;
+    }
+};
