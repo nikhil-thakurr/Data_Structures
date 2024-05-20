@@ -1,0 +1,20 @@
+Q-Link : https://leetcode.com/problems/sum-of-all-subset-xor-totals/description/?envType=daily-question&envId=2024-05-20
+
+class Solution {
+public:
+    
+    int helper(vector<int>nums,int idx,int xorr){
+        
+        if(idx==nums.size())return xorr;
+        
+        int inc=helper(nums,idx+1,xorr^nums[idx]);
+        int exc=helper(nums,idx+1,xorr);
+        
+        
+        return inc+exc;
+    }
+    
+    int subsetXORSum(vector<int>& nums) {
+        return helper(nums,0,0);
+    }
+};
