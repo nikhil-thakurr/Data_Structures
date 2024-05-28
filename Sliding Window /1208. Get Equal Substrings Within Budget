@@ -1,0 +1,37 @@
+Q-Link : https://leetcode.com/problems/get-equal-substrings-within-budget/?envType=daily-question&envId=2024-05-28
+
+class Solution {
+public:
+    int equalSubstring(string s, string t, int maxCost) {
+        vector<int>vec(s.length());
+
+        for(int i=0;i<s.length();i++){
+            vec[i]=abs(s[i]-t[i]);
+        }
+
+        int ans=0;
+
+
+        int i=0,j=0;
+
+        int sum=0;
+
+        while(j<s.length()){
+            sum+=vec[j];
+
+            while(i<=j && sum>maxCost){
+                sum-=vec[i];
+                i++;
+            }
+
+            ans=max(ans,j-i+1);
+
+            j++;
+            
+        }
+
+
+        return ans;
+
+    }
+};
