@@ -1,0 +1,614 @@
+import pandas as pd
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import Select
+from selenium.webdriver.common.keys import Keys
+from webdriver_manager.chrome import ChromeDriverManager
+import time
+import logging
+import re
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class NAELAScraper:
+    def __init__(self):
+        self.driver = None
+        self.wait = None
+        self.lawyers_data = []
+        # Add a set to track unique lawyers (using name + phone as unique identifier)
+        self.seen_lawyers = set()
+        
+    def setup_driver(self):
+        """Initialize Chrome driver with options"""
+        options = webdriver.ChromeOptions()
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('--disable-blink-features=AutomationControlled')
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option('useAutomationExtension', False)
+        
+        self.driver = webdriver.Chrome(
+            service=Service(ChromeDriverManager().install()),
+            options=options
+        )
+        self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        self.wait = WebDriverWait(self.driver, 20)
+        
+    def read_zip_codes(self, file_path):
+        """Read zip codes from text file"""
+        try:
+            with open(file_path, 'r') as file:
+                zip_codes = [line.strip() for line in file if line.strip()]
+            logger.info(f"Found {len(zip_codes)} zip codes in file")
+            return zip_codes
+        except Exception as e:
+            logger.error(f"Error reading zip codes file: {e}")
+            return []
+    
+    def navigate_to_search_page(self):
+        """Navigate to the lawyer search page"""
+        try:
+            self.driver.get("https://www.naela.org/FindALawyer")
+            time.sleep(3)
+            logger.info("Navigated to NAELA Find a Lawyer page")
+            return True
+        except Exception as e:
+            logger.error(f"Error navigating to search page: {e}")
+            return False
+    
+    def search_by_zip(self, zip_code):
+        """Search for lawyers by zip code"""
+        try:
+            # Wait for page to load
+            time.sleep(2)
+            
+            # Try to find zip code input field
+            zip_input = None
+            
+            # Method 1: Try direct element ID
+            try:
+                zip_input = self.wait.until(
+                    EC.presence_of_element_located((By.NAME, "ctl01$TemplateBody$WebPartManager1$gwpcDirectoryCCO$ciDirectoryCCO$DistanceQueryMenu$ResultsGrid$Sheet0$Input0$TextBox1"))
+                )
+            except:
+                pass
+            
+            # Method 2: Try by placeholder text or other attributes
+            if not zip_input:
+                try:
+                    zip_input = self.driver.find_element(By.XPATH, "//input[contains(@id, 'TextBox1')]")
+                except:
+                    pass
+            
+            # Method 3: Try finding input in iframe
+            if not zip_input:
+                iframes = self.driver.find_elements(By.TAG_NAME, "iframe")
+                for iframe in iframes:
+                    try:
+                        self.driver.switch_to.frame(iframe)
+                        zip_input = self.driver.find_element(By.XPATH, "//input[contains(@id, 'TextBox1') or @type='text']")
+                        break
+                    except:
+                        self.driver.switch_to.default_content()
+                        continue
+            
+            if not zip_input:
+                # Method 4: Generic search for text inputs
+                text_inputs = self.driver.find_elements(By.XPATH, "//input[@type='text']")
+                if text_inputs:
+                    zip_input = text_inputs[0]  # Assume first text input is zip code
+            
+            if zip_input:
+                # Clear and enter zip code
+                zip_input.clear()
+                zip_input.send_keys(str(zip_code))
+                logger.info(f"Entered zip code: {zip_code}")
+                
+                # Try to find and set distance dropdown to 100 miles
+                try:
+                    # Try different selectors for the distance dropdown
+                    distance_selectors = [
+                        "//select[contains(@id, 'DropDown')]",
+                        "//select[contains(@name, 'DropDown')]",
+                        "//select[contains(@class, 'distance')]",
+                        "//select"
+                    ]
+                    
+                    distance_dropdown = None
+                    for selector in distance_selectors:
+                        try:
+                            dropdowns = self.driver.find_elements(By.XPATH, selector)
+                            for dropdown in dropdowns:
+                                # Check if this dropdown contains distance options
+                                options = dropdown.find_elements(By.TAG_NAME, "option")
+                                for option in options:
+                                    if "mile" in option.text.lower():
+                                        distance_dropdown = dropdown
+                                        break
+                                if distance_dropdown:
+                                    break
+                            if distance_dropdown:
+                                break
+                        except:
+                            continue
+                    
+                    if distance_dropdown:
+                        select = Select(distance_dropdown)
+                        # Try to select 100 miles
+                        options_to_try = ["100 Miles", "100", "100 miles", "100 Miles"]
+                        for option_text in options_to_try:
+                            try:
+                                select.select_by_visible_text(option_text)
+                                logger.info(f"Selected distance: {option_text}")
+                                break
+                            except:
+                                continue
+                        
+                        # If exact text doesn't work, try by value
+                        if not any(opt.is_selected() for opt in select.options if "100" in opt.text):
+                            try:
+                                select.select_by_value("100")
+                                logger.info("Selected distance by value: 100")
+                            except:
+                                # If 100 is not available, try to select the largest available distance
+                                try:
+                                    options = select.options
+                                    max_distance = 0
+                                    max_option = None
+                                    for option in options:
+                                        if "mile" in option.text.lower():
+                                            distance_match = re.search(r'(\d+)', option.text)
+                                            if distance_match:
+                                                distance_val = int(distance_match.group(1))
+                                                if distance_val > max_distance:
+                                                    max_distance = distance_val
+                                                    max_option = option
+                                    if max_option:
+                                        select.select_by_visible_text(max_option.text)
+                                        logger.info(f"Selected maximum available distance: {max_option.text}")
+                                except:
+                                    logger.warning("Could not set distance dropdown")
+                    else:
+                        logger.warning("Could not find distance dropdown")
+                        
+                except Exception as e:
+                    logger.warning(f"Error setting distance dropdown: {e}")
+                
+                time.sleep(1)  # Brief pause after setting dropdown
+                
+                # Try to find and click search button
+                search_button = None
+                search_selectors = [
+                    "//input[@value='FIND']",
+                    "//button[contains(text(), 'FIND')]",
+                    "//input[@type='submit']",
+                    "//button[@type='submit']"
+                ]
+                
+                for selector in search_selectors:
+                    try:
+                        search_button = self.driver.find_element(By.XPATH, selector)
+                        break
+                    except:
+                        continue
+                
+                if search_button:
+                    search_button.click()
+                else:
+                    # Try pressing Enter
+                    zip_input.send_keys(Keys.ENTER)
+                
+                time.sleep(3)
+                return True
+            else:
+                logger.error(f"Could not find zip code input field for {zip_code}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error searching for zip code {zip_code}: {e}")
+            return False
+    
+    def click_show_all(self):
+        """Click 'Show all' link to display all results on one page"""
+        try:
+            # Wait for results to load first
+            time.sleep(3)
+            
+            # Try different selectors for the "Show all" link
+            show_all_selectors = [
+                "//a[contains(text(), 'Show all')]",
+                "//a[contains(@onclick, 'ShowAll')]",
+                "//a[contains(@href, 'ShowAll')]",
+                "//a[text()='Show all 59']",  # Specific to your screenshot
+                "//a[starts-with(text(), 'Show all')]"
+            ]
+            
+            show_all_button = None
+            for selector in show_all_selectors:
+                try:
+                    show_all_button = self.driver.find_element(By.XPATH, selector)
+                    if show_all_button.is_displayed():
+                        break
+                except:
+                    continue
+            
+            if show_all_button:
+                # Scroll to the element to make sure it's visible
+                self.driver.execute_script("arguments[0].scrollIntoView(true);", show_all_button)
+                time.sleep(1)
+                
+                # Click the show all button
+                show_all_button.click()
+                logger.info("Clicked 'Show all' to display all results")
+                
+                # Wait for all results to load
+                time.sleep(5)
+                return True
+            else:
+                logger.info("No 'Show all' button found - may already be showing all results")
+                return True
+                
+        except Exception as e:
+            logger.warning(f"Error clicking 'Show all': {e}")
+            return True  # Continue anyway, maybe results are already showing
+    
+    def is_duplicate_lawyer(self, lawyer_info):
+        """Check if lawyer is already in our dataset"""
+        # Create a unique identifier using name and phone (or email if no phone)
+        name = lawyer_info.get('name', '').strip()
+        phone = lawyer_info.get('phone', '').strip()
+        email = lawyer_info.get('email', '').strip()
+        
+        if not name:
+            return True  # Skip entries without names
+        
+        # Use name + phone as primary identifier, fallback to name + email
+        identifier = f"{name}|{phone}" if phone else f"{name}|{email}"
+        
+        if identifier in self.seen_lawyers:
+            return True
+        
+        self.seen_lawyers.add(identifier)
+        return False
+    
+    def extract_lawyer_data(self, zip_code):
+        """Extract lawyer information from search results"""
+        lawyers = []
+        try:
+            # Switch back to default content if we were in iframe
+            self.driver.switch_to.default_content()
+            
+            # First, try to click "Show all" to get all results
+            self.click_show_all()
+            
+            # Wait for all results to load
+            time.sleep(5)
+            
+            # Check if there are any results
+            no_results_selectors = [
+                "//div[contains(text(), 'No results')]",
+                "//div[contains(text(), 'no lawyers found')]",
+                "//div[contains(text(), 'Please enter your search criteria')]"
+            ]
+            
+            for selector in no_results_selectors:
+                try:
+                    no_results = self.driver.find_elements(By.XPATH, selector)
+                    if no_results:
+                        logger.info(f"No results found for zip code {zip_code}")
+                        return lawyers
+                except:
+                    continue
+            
+            # Try to find lawyer cards/entries using various methods
+            lawyer_elements = []
+            
+            # Method 1: Look for specific lawyer card containers
+            try:
+                lawyer_elements = self.driver.find_elements(By.XPATH, "//div[contains(@class, 'lawyer') or contains(@class, 'attorney') or contains(@class, 'member')]")
+            except:
+                pass
+            
+            # Method 2: Look for elements containing lawyer names (typically h3, h4, or strong tags)
+            if not lawyer_elements:
+                try:
+                    lawyer_elements = self.driver.find_elements(By.XPATH, "//div[.//h3 or .//h4 or .//strong[contains(text(), ' ')]]")
+                except:
+                    pass
+            
+            # Method 3: Look for elements with "Member Since" text
+            if not lawyer_elements:
+                try:
+                    member_elements = self.driver.find_elements(By.XPATH, "//div[contains(text(), 'Member Since')]")
+                    # Get parent elements that might contain full lawyer info
+                    lawyer_elements = [elem.find_element(By.XPATH, "./..") for elem in member_elements]
+                except:
+                    pass
+            
+            # Method 4: Use page source parsing if elements can't be found
+            if not lawyer_elements:
+                return self.extract_from_page_source(zip_code)
+            
+            logger.info(f"Found {len(lawyer_elements)} potential lawyer elements")
+            
+            for element in lawyer_elements:
+                try:
+                    lawyer_info = self.extract_lawyer_from_element(element, zip_code)
+                    if lawyer_info and not self.is_duplicate_lawyer(lawyer_info):
+                        lawyers.append(lawyer_info)
+                        logger.info(f"Added new lawyer: {lawyer_info['name']}")
+                    elif lawyer_info:
+                        logger.info(f"Skipped duplicate lawyer: {lawyer_info['name']}")
+                except Exception as e:
+                    logger.warning(f"Error extracting lawyer from element: {e}")
+                    continue
+            
+            logger.info(f"Found {len(lawyers)} unique lawyers for zip code {zip_code}")
+            return lawyers
+            
+        except Exception as e:
+            logger.error(f"Error extracting lawyer data for zip code {zip_code}: {e}")
+            return []
+    
+    def extract_lawyer_from_element(self, element, zip_code):
+        """Extract lawyer information from a single element"""
+        try:
+            element_text = element.text
+            element_html = element.get_attribute('innerHTML')
+            
+            # Extract name (usually the first line or in a header tag)
+            name = ''
+            name_selectors = ['.//h3', './/h4', './/h2', './/strong', './/b']
+            for selector in name_selectors:
+                try:
+                    name_elem = element.find_element(By.XPATH, selector)
+                    name_text = name_elem.text.strip()
+                    # Check if this looks like a name (has at least 2 words)
+                    if len(name_text.split()) >= 2 and not any(skip in name_text.lower() for skip in ['member since', 'licensed in', 'view details']):
+                        name = name_text
+                        break
+                except:
+                    continue
+            
+            # If no name found in headers, try to extract from text
+            if not name:
+                lines = element_text.split('\n')
+                for line in lines[:3]:  # Check first 3 lines
+                    line = line.strip()
+                    if len(line.split()) >= 2 and not any(skip in line.lower() for skip in ['member since', 'licensed in', 'view details', 'email', 'phone']):
+                        # Check if it looks like a name (contains letters and possibly commas for credentials)
+                        if re.match(r'^[A-Z][a-zA-Z\s.,]+$', line):
+                            name = line
+                            break
+            
+            if not name:
+                return None
+            
+            # Extract other information
+            phone_match = re.search(r'\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}', element_text)
+            phone = phone_match.group() if phone_match else ''
+            
+            email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', element_text)
+            email = email_match.group() if email_match else ''
+            
+            member_since_match = re.search(r'Member Since:\s*(\d{2}/\d{2}/\d{4})', element_text)
+            member_since = member_since_match.group(1) if member_since_match else ''
+            
+            licensed_match = re.search(r'Licensed in:\s*([^\n]+)', element_text)
+            licensed_in = licensed_match.group(1).strip() if licensed_match else ''
+            
+            distance_match = re.search(r'(\d+(?:\.\d+)?)\s*miles?\s*away', element_text)
+            distance = distance_match.group(1) if distance_match else ''
+            
+            # Extract location (city, state)
+            location_match = re.search(r'([A-Z][a-zA-Z\s]+,\s*[A-Z]{2})', element_text)
+            location = location_match.group(1) if location_match else ''
+            
+            lawyer_info = {
+                'zip_code': zip_code,
+                'name': name,
+                'location': location,
+                'member_since': member_since,
+                'licensed_in': licensed_in,
+                'phone': phone,
+                'email': email,
+                'distance': distance
+            }
+            
+            return lawyer_info
+            
+        except Exception as e:
+            logger.warning(f"Error extracting lawyer from element: {e}")
+            return None
+    
+    def extract_from_page_source(self, zip_code):
+        """Fallback method: Extract lawyer information from page source"""
+        lawyers = []
+        try:
+            page_source = self.driver.page_source
+            
+            # Parse the HTML content directly using regex patterns
+            name_pattern = r'(?:<h\d[^>]*>|<[^>]*class="[^"]*name[^"]*"[^>]*>)([A-Z][a-zA-Z\s.]+(?:,\s*[A-Z]+)?)\s*(?:</[^>]+>)'
+            phone_pattern = r'\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}'
+            email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+            member_since_pattern = r'Member Since:\s*(\d{2}/\d{2}/\d{4})'
+            licensed_pattern = r'Licensed in:\s*([^<\n]+)'
+            distance_pattern = r'(\d+(?:\.\d+)?)\s*miles?\s*away'
+            location_pattern = r'([A-Z][a-zA-Z\s]+,\s*[A-Z]{2})'
+            
+            # Split page into sections that likely contain lawyer info
+            lines = page_source.split('\n')
+            current_lawyer = {}
+            
+            for i, line in enumerate(lines):
+                line_text = re.sub(r'<[^>]+>', '', line).strip()
+                
+                # Look for lawyer names
+                name_matches = re.findall(r'([A-Z][a-zA-Z]+(?:\s+[A-Z]\.?\s*)?[A-Z][a-zA-Z]+(?:,\s*[A-Z]+)?)', line_text)
+                for name_match in name_matches:
+                    if any(skip in name_match.lower() for skip in ['member since', 'licensed in', 'practice areas', 'view details', 'find a lawyer']):
+                        continue
+                    if len(name_match.split()) >= 2 and not current_lawyer.get('name'):
+                        current_lawyer['name'] = name_match.strip()
+                
+                # Look for other information
+                member_match = re.search(member_since_pattern, line_text)
+                if member_match and current_lawyer.get('name'):
+                    current_lawyer['member_since'] = member_match.group(1)
+                
+                licensed_match = re.search(licensed_pattern, line_text)
+                if licensed_match and current_lawyer.get('name'):
+                    current_lawyer['licensed_in'] = licensed_match.group(1).strip()
+                
+                phone_match = re.search(phone_pattern, line_text)
+                if phone_match and current_lawyer.get('name'):
+                    current_lawyer['phone'] = phone_match.group()
+                
+                email_match = re.search(email_pattern, line_text)
+                if email_match and current_lawyer.get('name'):
+                    current_lawyer['email'] = email_match.group()
+                
+                distance_match = re.search(distance_pattern, line_text)
+                if distance_match and current_lawyer.get('name'):
+                    current_lawyer['distance'] = distance_match.group(1)
+                
+                location_match = re.search(location_pattern, line_text)
+                if location_match and current_lawyer.get('name'):
+                    current_lawyer['location'] = location_match.group(1)
+                
+                # If we have enough info for a lawyer, save it and start fresh
+                if current_lawyer.get('name') and (current_lawyer.get('member_since') or current_lawyer.get('phone') or current_lawyer.get('email')):
+                    lawyer_info = {
+                        'zip_code': zip_code,
+                        'name': current_lawyer.get('name', ''),
+                        'location': current_lawyer.get('location', ''),
+                        'member_since': current_lawyer.get('member_since', ''),
+                        'licensed_in': current_lawyer.get('licensed_in', ''),
+                        'phone': current_lawyer.get('phone', ''),
+                        'email': current_lawyer.get('email', ''),
+                        'distance': current_lawyer.get('distance', '')
+                    }
+                    
+                    if not self.is_duplicate_lawyer(lawyer_info):
+                        lawyers.append(lawyer_info)
+                        logger.info(f"Added new lawyer: {lawyer_info['name']}")
+                    else:
+                        logger.info(f"Skipped duplicate lawyer: {lawyer_info['name']}")
+                    
+                    current_lawyer = {}
+            
+            # Handle any remaining lawyer data
+            if current_lawyer.get('name'):
+                lawyer_info = {
+                    'zip_code': zip_code,
+                    'name': current_lawyer.get('name', ''),
+                    'location': current_lawyer.get('location', ''),
+                    'member_since': current_lawyer.get('member_since', ''),
+                    'licensed_in': current_lawyer.get('licensed_in', ''),
+                    'phone': current_lawyer.get('phone', ''),
+                    'email': current_lawyer.get('email', ''),
+                    'distance': current_lawyer.get('distance', '')
+                }
+                
+                if not self.is_duplicate_lawyer(lawyer_info):
+                    lawyers.append(lawyer_info)
+                    logger.info(f"Added new lawyer: {lawyer_info['name']}")
+                
+            return lawyers
+            
+        except Exception as e:
+            logger.error(f"Error in page source extraction: {e}")
+            return []
+    
+    def scrape_all_zip_codes(self, zip_codes):
+        """Scrape lawyer data for all zip codes"""
+        self.setup_driver()
+        
+        try:
+            for i, zip_code in enumerate(zip_codes):
+                logger.info(f"Processing zip code {i+1}/{len(zip_codes)}: {zip_code}")
+                
+                # Navigate to search page
+                if not self.navigate_to_search_page():
+                    continue
+                
+                # Search for lawyers in this zip code
+                if self.search_by_zip(zip_code):
+                    lawyers = self.extract_lawyer_data(zip_code)
+                    self.lawyers_data.extend(lawyers)
+                
+                # Add delay between requests
+                time.sleep(2)
+                
+        finally:
+            if self.driver:
+                self.driver.quit()
+    
+    def remove_duplicates_from_data(self):
+        """Remove any remaining duplicates from the final dataset"""
+        if not self.lawyers_data:
+            return
+        
+        # Convert to DataFrame for easier duplicate removal
+        df = pd.DataFrame(self.lawyers_data)
+        
+        # Remove duplicates based on name and phone (or email if no phone)
+        df['unique_id'] = df.apply(lambda row: f"{row['name']}|{row['phone'] if row['phone'] else row['email']}", axis=1)
+        df_unique = df.drop_duplicates(subset=['unique_id'], keep='first')
+        df_unique = df_unique.drop('unique_id', axis=1)
+        
+        # Convert back to list of dictionaries
+        self.lawyers_data = df_unique.to_dict('records')
+        
+        logger.info(f"After removing duplicates: {len(self.lawyers_data)} unique lawyers")
+    
+    def save_to_excel(self, output_file='naela_lawyers.xlsx'):
+        """Save scraped data to Excel file"""
+        if not self.lawyers_data:
+            logger.warning("No lawyer data to save")
+            return
+        
+        # Final duplicate removal as safety measure
+        self.remove_duplicates_from_data()
+        
+        try:
+            df = pd.DataFrame(self.lawyers_data)
+            
+            # Sort by name for better organization
+            df = df.sort_values('name')
+            
+            df.to_excel(output_file, index=False)
+            logger.info(f"Saved {len(self.lawyers_data)} unique lawyer records to {output_file}")
+        except Exception as e:
+            logger.error(f"Error saving to Excel: {e}")
+
+def main():
+    # Configuration
+    zip_codes_file = 'zip_codes.txt'  # Path to your zip codes file
+    output_excel_file = 'naela_lawyers_data.xlsx'
+    
+    # Create scraper instance
+    scraper = NAELAScraper()
+    
+    # Read zip codes from file
+    zip_codes = scraper.read_zip_codes(zip_codes_file)
+    
+    if not zip_codes:
+        logger.error("No zip codes found. Please check your zip_codes.txt file")
+        return
+    
+    # Scrape data
+    scraper.scrape_all_zip_codes(zip_codes)
+    
+    # Save to Excel
+    scraper.save_to_excel(output_excel_file)
+    
+    logger.info("Scraping completed!")
+
+if __name__ == "__main__":
+    main()
