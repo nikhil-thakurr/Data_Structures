@@ -10,6 +10,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 import time
 import logging
 import re
+from urllib.parse import unquote
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -276,6 +277,36 @@ class NAELAScraper:
         self.seen_lawyers.add(identifier)
         return False
     
+    def extract_email_from_link(self, element):
+        """Extract email from mailto link"""
+        try:
+            # Look for email links
+            email_links = element.find_elements(By.XPATH, ".//a[contains(@href, 'mailto:') or text()='Email']")
+            
+            for link in email_links:
+                href = link.get_attribute('href')
+                if href and 'mailto:' in href:
+                    # Extract email from mailto: link
+                    email = href.replace('mailto:', '').split('?')[0]  # Remove any query parameters
+                    email = unquote(email)  # Decode URL encoding
+                    return email.strip()
+                    
+            # Alternative method: look for JavaScript click handlers that might contain email
+            email_elements = element.find_elements(By.XPATH, ".//a[text()='Email' or contains(@onclick, 'email') or contains(@onclick, 'mailto')]")
+            for elem in email_elements:
+                onclick = elem.get_attribute('onclick')
+                if onclick:
+                    # Try to extract email from JavaScript onclick
+                    email_match = re.search(r'mailto:([^\'"\s;]+)', onclick)
+                    if email_match:
+                        return unquote(email_match.group(1)).strip()
+                        
+            return ''
+            
+        except Exception as e:
+            logger.warning(f"Error extracting email from link: {e}")
+            return ''
+    
     def extract_lawyer_data(self, zip_code):
         """Extract lawyer information from search results"""
         lawyers = []
@@ -341,7 +372,7 @@ class NAELAScraper:
                     lawyer_info = self.extract_lawyer_from_element(element, zip_code)
                     if lawyer_info and not self.is_duplicate_lawyer(lawyer_info):
                         lawyers.append(lawyer_info)
-                        logger.info(f"Added new lawyer: {lawyer_info['name']}")
+                        logger.info(f"Added new lawyer: {lawyer_info['name']} - Email: {lawyer_info['email']}")
                     elif lawyer_info:
                         logger.info(f"Skipped duplicate lawyer: {lawyer_info['name']}")
                 except Exception as e:
@@ -389,12 +420,17 @@ class NAELAScraper:
             if not name:
                 return None
             
-            # Extract other information
+            # Extract phone number
             phone_match = re.search(r'\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}', element_text)
             phone = phone_match.group() if phone_match else ''
             
-            email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', element_text)
-            email = email_match.group() if email_match else ''
+            # Extract email using the new method
+            email = self.extract_email_from_link(element)
+            
+            # If email extraction from link failed, try text-based extraction as fallback
+            if not email:
+                email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', element_text)
+                email = email_match.group() if email_match else ''
             
             member_since_match = re.search(r'Member Since:\s*(\d{2}/\d{2}/\d{4})', element_text)
             member_since = member_since_match.group(1) if member_since_match else ''
@@ -435,7 +471,7 @@ class NAELAScraper:
             # Parse the HTML content directly using regex patterns
             name_pattern = r'(?:<h\d[^>]*>|<[^>]*class="[^"]*name[^"]*"[^>]*>)([A-Z][a-zA-Z\s.]+(?:,\s*[A-Z]+)?)\s*(?:</[^>]+>)'
             phone_pattern = r'\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}'
-            email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+            email_pattern = r'mailto:([^\'"\s;?]+)'  # Updated to extract from mailto links
             member_since_pattern = r'Member Since:\s*(\d{2}/\d{2}/\d{4})'
             licensed_pattern = r'Licensed in:\s*([^<\n]+)'
             distance_pattern = r'(\d+(?:\.\d+)?)\s*miles?\s*away'
@@ -456,6 +492,12 @@ class NAELAScraper:
                     if len(name_match.split()) >= 2 and not current_lawyer.get('name'):
                         current_lawyer['name'] = name_match.strip()
                 
+                # Look for email in mailto links
+                email_matches = re.findall(email_pattern, line)
+                for email_match in email_matches:
+                    if current_lawyer.get('name') and not current_lawyer.get('email'):
+                        current_lawyer['email'] = unquote(email_match).strip()
+                
                 # Look for other information
                 member_match = re.search(member_since_pattern, line_text)
                 if member_match and current_lawyer.get('name'):
@@ -468,10 +510,6 @@ class NAELAScraper:
                 phone_match = re.search(phone_pattern, line_text)
                 if phone_match and current_lawyer.get('name'):
                     current_lawyer['phone'] = phone_match.group()
-                
-                email_match = re.search(email_pattern, line_text)
-                if email_match and current_lawyer.get('name'):
-                    current_lawyer['email'] = email_match.group()
                 
                 distance_match = re.search(distance_pattern, line_text)
                 if distance_match and current_lawyer.get('name'):
@@ -496,7 +534,7 @@ class NAELAScraper:
                     
                     if not self.is_duplicate_lawyer(lawyer_info):
                         lawyers.append(lawyer_info)
-                        logger.info(f"Added new lawyer: {lawyer_info['name']}")
+                        logger.info(f"Added new lawyer: {lawyer_info['name']} - Email: {lawyer_info['email']}")
                     else:
                         logger.info(f"Skipped duplicate lawyer: {lawyer_info['name']}")
                     
@@ -517,7 +555,7 @@ class NAELAScraper:
                 
                 if not self.is_duplicate_lawyer(lawyer_info):
                     lawyers.append(lawyer_info)
-                    logger.info(f"Added new lawyer: {lawyer_info['name']}")
+                    logger.info(f"Added new lawyer: {lawyer_info['name']} - Email: {lawyer_info['email']}")
                 
             return lawyers
             
@@ -584,6 +622,11 @@ class NAELAScraper:
             
             df.to_excel(output_file, index=False)
             logger.info(f"Saved {len(self.lawyers_data)} unique lawyer records to {output_file}")
+            
+            # Log summary of email extraction
+            emails_found = df['email'].notna().sum()
+            logger.info(f"Email extraction summary: {emails_found} out of {len(df)} lawyers have email addresses")
+            
         except Exception as e:
             logger.error(f"Error saving to Excel: {e}")
 
